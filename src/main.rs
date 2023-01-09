@@ -5,11 +5,11 @@ pub trait Word {
     fn op_code(&self) -> u8;
     fn modifier(&self) -> u8;
     fn index(&self) -> u8;
-    fn address(&self) -> [u8; 5];
-    fn address_usize(&self) -> usize;
+    fn address_bytes(&self) -> [u8; 5];
+    fn address(&self) -> usize;
     fn fields(&self) -> (usize, u8, u8, u8) {
         (
-            self.address_usize(),
+            self.address(),
             self.index(),
             self.modifier(),
             self.op_code(),
@@ -34,13 +34,13 @@ impl Word for u64 {
         self.to_be_bytes()[5]
     }
 
-    fn address(&self) -> [u8; 5] {
+    fn address_bytes(&self) -> [u8; 5] {
         let mut addr = [0, 0, 0, 0, 0];
         addr.clone_from_slice(&self.to_be_bytes()[0..5]);
         addr
     }
 
-    fn address_usize(&self) -> usize {
+    fn address(&self) -> usize {
         (self / 16777216) as usize
     }
 }
@@ -166,7 +166,7 @@ impl MyMix {
         }
     }
 
-    pub fn incr_enter(&mut self, instruction: u64) {
+    pub fn inc_dec_ent(&mut self, instruction: u64) {
         let (address, index, modification, op_code) = instruction.fields();
 
         let addr = if index != 0 {
@@ -238,6 +238,41 @@ impl MyMix {
         }
     }
 
+    fn save_and_jump(&mut self, addr: usize) {
+        self.j = (self.instr_ptr + 1) as u64;
+        self.instr_ptr = addr as usize
+    }
+
+    pub fn jump(&mut self, instruction: u64) {
+        let (address, index, modifier, op_code) = instruction.fields();
+
+        let addr = if index != 0 {
+            address.wrapping_add(self.i[(index - 1) as usize] as usize)
+        } else {
+            address
+        };
+
+        match op_code {
+            39 => match modifier {
+                0 => self.save_and_jump(addr),
+                1 => self.instr_ptr = addr as usize,
+                4 => {
+                    if self.cmp == Ordering::Less {
+                        self.save_and_jump(addr)
+                    }
+                }
+                5 => {
+                    if self.cmp == Ordering::Equal {
+                        self.save_and_jump(addr)
+                    }
+                }
+                _ => panic!("unknown instruction: {}", instruction.as_word()),
+            },
+            40 => todo!(),
+            _ => panic!("unknown instruction: {}", instruction.as_word()),
+        }
+    }
+
     pub fn step(&mut self) {
         self.read();
         self.instr_ptr += 1;
@@ -259,7 +294,8 @@ impl MyMix {
             1..=4 => self.arith(instruction),
             8..=15 => self.load(instruction),
             24..=33 => self.store(instruction),
-            48..=55 => self.incr_enter(instruction),
+            39..=47 => self.jump(instruction),
+            48..=55 => self.inc_dec_ent(instruction),
             _ => panic!("unknown instruction: {}", instruction.as_word()),
         }
     }
