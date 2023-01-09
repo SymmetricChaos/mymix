@@ -98,7 +98,11 @@ impl MyMix {
         let mut memory = String::from("Memory\n");
         for (n, line) in self.mem.iter().enumerate() {
             if line != &0 {
-                memory.push_str(&format!("{}: {:?}\n", n, line.as_word()));
+                memory.push_str(&format!("{}: {:?}", n, line.as_word()));
+                if n == self.instr_ptr {
+                    memory.push_str("  <=");
+                }
+                memory.push('\n');
             }
         }
         println!("{}", memory)
@@ -175,6 +179,7 @@ impl MyMix {
             address as u64
         };
 
+        // Increment
         if modification == 0 {
             match op_code {
                 48 => self.a = self.a.wrapping_add(addr),
@@ -187,6 +192,7 @@ impl MyMix {
                 55 => self.x = self.x.wrapping_add(addr),
                 _ => panic!("unknown instruction: {}", instruction.as_word()),
             }
+        // Decrement
         } else if modification == 1 {
             match op_code {
                 48 => self.a = self.a.wrapping_sub(addr),
@@ -199,6 +205,7 @@ impl MyMix {
                 55 => self.x = self.x.wrapping_sub(addr),
                 _ => panic!("unknown instruction: {}", instruction.as_word()),
             }
+        // Enter
         } else if modification == 2 {
             match op_code {
                 48 => self.a = addr,
@@ -251,7 +258,6 @@ impl MyMix {
         } else {
             address
         };
-
         match op_code {
             39 => match modifier {
                 0 => self.save_and_jump(addr),
@@ -266,6 +272,26 @@ impl MyMix {
                         self.save_and_jump(addr)
                     }
                 }
+                6 => {
+                    if self.cmp == Ordering::Greater {
+                        self.save_and_jump(addr)
+                    }
+                }
+                7 => {
+                    if self.cmp != Ordering::Less {
+                        self.save_and_jump(addr)
+                    }
+                }
+                8 => {
+                    if self.cmp != Ordering::Equal {
+                        self.save_and_jump(addr)
+                    }
+                }
+                9 => {
+                    if self.cmp != Ordering::Greater {
+                        self.save_and_jump(addr)
+                    }
+                }
                 _ => panic!("unknown instruction: {}", instruction.as_word()),
             },
             40 => todo!(),
@@ -274,12 +300,21 @@ impl MyMix {
     }
 
     pub fn step(&mut self) {
+        if self.instr_ptr == 0 {
+            return;
+        }
         self.read();
+        if self.instr_ptr == 0 {
+            return;
+        }
         self.instr_ptr += 1;
     }
 
     pub fn run(&mut self) {
         loop {
+            if self.instr_ptr == 0 {
+                break;
+            }
             self.read();
             if self.instr_ptr == 0 {
                 break;
@@ -296,6 +331,7 @@ impl MyMix {
             24..=33 => self.store(instruction),
             39..=47 => self.jump(instruction),
             48..=55 => self.inc_dec_ent(instruction),
+            56..=63 => self.cmp(instruction),
             _ => panic!("unknown instruction: {}", instruction.as_word()),
         }
     }
@@ -303,20 +339,30 @@ impl MyMix {
 
 fn main() {
     let mut computer = MyMix::new();
-    computer.mem[1] = u64::from_be_bytes([0, 0, 0, 0, 10, 0, 0, 8]);
-    computer.mem[2] = u64::from_be_bytes([0, 0, 0, 0, 11, 0, 0, 1]);
-    computer.mem[3] = u64::from_be_bytes([0, 0, 0, 0, 20, 0, 0, 24]);
-    computer.mem[10] = u64::from_be_bytes([16, 15, 14, 13, 12, 11, 10, 9]);
-    computer.mem[11] = u64::from_be_bytes([1, 2, 4, 8, 16, 32, 64, 128]);
+    computer.mem[1] = u64::from_be_bytes([0, 0, 0, 0, 10, 0, 0, 8]); // LOAD M10 into rA
+    computer.mem[2] = u64::from_be_bytes([0, 0, 0, 0, 10, 1, 0, 1]); // ADD rA to M10 + i1
+    computer.mem[3] = u64::from_be_bytes([0, 0, 0, 0, 11, 1, 0, 24]); // STORE rA at M11 + i1
+    computer.mem[4] = u64::from_be_bytes([0, 0, 0, 0, 1, 0, 0, 49]); // INC i1
+    computer.mem[5] = u64::from_be_bytes([0, 0, 0, 0, 50, 0, 0, 57]); // CMP i1 to M50
+    computer.mem[6] = u64::from_be_bytes([0, 0, 0, 0, 1, 0, 8, 39]); // JUMP to M1 if not equal
+    computer.mem[7] = u64::from_be_bytes([0, 0, 0, 0, 0, 0, 1, 39]); // JUMP to M0
+    computer.mem[50] = u64::from_be_bytes([0, 0, 0, 0, 0, 0, 0, 5]); // constant 5
+    computer.mem[10] = u64::from_be_bytes([1, 2, 3, 5, 8, 13, 21, 37]); // some bytes
     println!("{}", computer);
-    //println!("{}", computer.mem[0] % 256);
-    computer.step();
-    println!("{}", computer.a.as_word());
-    computer.print_mem();
-    computer.step();
-    println!("{}", computer.a.as_word());
-    computer.print_mem();
-    computer.step();
-    println!("{}", computer.a.as_word());
-    computer.print_mem();
+    computer.run();
+    println!("{}", computer);
+    // for _ in 0..10 {
+    //     computer.step();
+    //     computer.print_mem();
+    //     computer.step();
+    //     computer.print_mem();
+    //     computer.step();
+    //     computer.print_mem();
+    //     computer.step();
+    //     computer.print_mem();
+    //     computer.step();
+    //     computer.print_mem();
+    //     computer.step();
+    //     computer.print_mem();
+    // }
 }
